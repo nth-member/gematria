@@ -43,14 +43,13 @@ punctuation and case included.</p>
 </section>
 
 <section class="card">
-  <h2>Run the programs on a list</h2>
+  <h2>RUN FULL NAMES (GIVEN) ON A LIST</h2>
   <p class="note">One name per line; blank lines and lines beginning with <span class="mono">#</span> are skipped,
-  exactly as the programs read their names file. Each run prints what the
-  program prints and saves the CSV it writes, with the same columns and file name.</p>
+  exactly as the programs read their names file. Run gives each name both programs' results and their delta,
+  and saves them as one CSV.</p>
   <textarea id="list" rows="9" spellcheck="false" autocomplete="off" placeholder="One name per line"></textarea>
   <div class="bar" style="margin-top:10px">
-    <button id="rung">Run gematria_names.py</button>
-    <button id="runa">Run ascii_name_sum.py</button>
+    <button id="run">Run</button>
     <button id="reset">Clear</button>
   </div>
   <pre class="term" id="term" hidden></pre>
@@ -98,7 +97,6 @@ function ascii(text) {
 
 // The programs open the file in text mode, so \r\n and \r arrive as \n.
 const lines = text => text.split(/\r\n|\r|\n/);
-const readGematria = text => lines(text).map(l => l.trim()).filter(l => l && !l.startsWith("#"));
 const readAscii = text => lines(text).filter(l => l.trim() && !l.trimStart().startsWith("#"));
 
 // csv.writer's default dialect: minimal quoting, \r\n line ends.
@@ -117,33 +115,29 @@ function save(name, body) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
 }
 
-function runGematria() {
-  const names = readGematria($("list").value);
-  if (!names.length) return term(`No names found in: the list above`);
-  const file = `gematria_results_${stamp()}.csv`;
-  let csv = csvRow(["original_name", "normalized_letters", "breakdown", "total"]), out = "";
-  for (const n of names) {
-    const {parts, total} = gematria(n);
-    csv += csvRow([n, parts.map(p => p[0]).join(""), parts.map(([l, v]) => `${l}=${v}`).join(" + "), total]);
-    out += `${n} -> ${total}\n`;
+// One row per name: gematria_names.py's columns, then ascii_name_sum.py's, then the delta.
+// The ASCII columns are taken from the line as written, as ascii_name_sum.py reads it.
+function run() {
+  const lines = readAscii($("list").value);
+  if (!lines.length) return term(`No names found in: the list above`);
+  const file = `gematria_ascii_results_${stamp()}.csv`;
+  let csv = csvRow(["original_name", "normalized_letters", "gematria_breakdown", "gematria_total",
+                    "ascii_characters", "ascii_breakdown", "ascii_total", "delta"]), out = "";
+  for (const line of lines) {
+    const name = line.trim(), g = gematria(name), a = ascii(line);
+    const gcols = [name, g.parts.map(p => p[0]).join(""), g.parts.map(([l, v]) => `${l}=${v}`).join(" + "), g.total];
+    if (a.error) {
+      csv += csvRow([...gcols, "", `ERROR: ${a.error}`, "", ""]);
+      out += `${name} -> gematria ${g.total} · ascii ERROR: ${a.error}\n`;
+      continue;
+    }
+    const d = g.total - a.total;
+    csv += csvRow([...gcols, a.parts.map(([s]) => s === "Space" ? " " : s).join(""),
+                   a.parts.map(([s, v]) => `${s}=${v}`).join(" + "), a.total, d]);
+    out += `${name} -> gematria ${g.total} · ascii ${a.total} · delta ${d}\n`;
   }
   save(file, csv);
-  term(out + `\nProcessed ${names.length} name(s).\nOutput written to: ${file}`);
-}
-
-function runAscii() {
-  const names = readAscii($("list").value);
-  if (!names.length) return term(`No names found in: the list above`);
-  const file = `ascii_results_${stamp()}.csv`;
-  let csv = csvRow(["original_text", "ascii_characters", "breakdown", "total"]), out = "";
-  for (const n of names) {
-    const r = ascii(n);
-    if (r.error) { csv += csvRow([n, "", `ERROR: ${r.error}`, ""]); out += `${n} -> ERROR: ${r.error}\n`; continue; }
-    csv += csvRow([n, r.parts.map(([s]) => s === "Space" ? " " : s).join(""), r.parts.map(([s, v]) => `${s}=${v}`).join(" + "), r.total]);
-    out += `${n} -> ${r.total}\n`;
-  }
-  save(file, csv);
-  term(out + `\nProcessed ${names.length} line(s).\nOutput written to: ${file}`);
+  term(out + `\nProcessed ${lines.length} name(s).\nOutput written to: ${file}`);
 }
 
 function term(s) { const t = $("term"); t.hidden = false; t.textContent = s; }
@@ -174,7 +168,7 @@ async function main() {
   VALUES = tables.values; CONTROL = tables.control_names;
 
   $("reset").onclick = () => { $("list").value = ""; $("term").hidden = true; $("list").focus(); };
-  $("rung").onclick = runGematria; $("runa").onclick = runAscii;
+  $("run").onclick = run;
 
   $("one").addEventListener("input", one);
 

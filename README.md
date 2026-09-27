@@ -12,10 +12,10 @@
 `docs/` is static: no build step on the server, no dependencies. `index.html` has two parts:
 
 - **FULL NAME (GIVEN):** both values as you type, letter by letter, and their delta (gematria − ASCII).
-- **Run the programs on a list:** reads the lines the way each program reads its names file, prints what
-  the program prints, and saves the CSV it writes, with the same columns and file name. It was checked
-  byte for byte against the programs, including quoting, tabs, `ß`, zero-width and non-breaking spaces,
-  and the wording of the error.
+- **RUN FULL NAMES (GIVEN) ON A LIST:** reads the lines the way the programs read their names file, and
+  **Run** saves one CSV with a row per name: `gematria_names.py`'s columns, `ascii_name_sum.py`'s columns,
+  and the delta (gematria − ASCII). Each program's columns were checked byte for byte against the program,
+  including quoting, tabs, `ß`, zero-width and non-breaking spaces, and the wording of the error.
 
 The page needs only the programs' letter values and control-character names, in `docs/data/tables.json`.
 
