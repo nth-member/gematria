@@ -11,7 +11,7 @@
 
 `docs/` is static: no build step on the server, no dependencies. `index.html` has two parts:
 
-- **Any text:** both values as you type, letter by letter.
+- **FULL NAME (GIVEN):** both values as you type, letter by letter, and their delta (gematria − ASCII).
 - **Run the programs on a list:** reads the lines the way each program reads its names file, prints what
   the program prints, and saves the CSV it writes, with the same columns and file name. It was checked
   byte for byte against the programs, including quoting, tabs, `ß`, zero-width and non-breaking spaces,

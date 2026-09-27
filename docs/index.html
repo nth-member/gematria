@@ -9,6 +9,7 @@
 <style>
 .systems{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media (max-width:640px){.systems{grid-template-columns:1fr}}
+.systems .delta{grid-column:1/-1}
 .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
 .chip{background:var(--chip);border-radius:6px;padding:3px 6px;text-align:center;min-width:30px;
   font-family:ui-monospace,monospace;line-height:1.25}
@@ -31,12 +32,13 @@ punctuation and case included.</p>
 
 
 <section class="card">
-  <h2>Any text</h2>
+  <h2>FULL NAME (GIVEN)</h2>
   <p class="note">Both programs at once, as you type.</p>
   <input id="one" type="text" autocomplete="off" spellcheck="false" style="width:100%" placeholder="Type a name">
   <div class="systems" style="margin-top:12px">
-    <div><label>Gematria · gematria_names.py</label><div id="g1"></div></div>
-    <div><label>ASCII · ascii_name_sum.py</label><div id="a1"></div></div>
+    <div><label>Gematria</label><div id="g1"></div></div>
+    <div><label>ASCII</label><div id="a1"></div></div>
+    <div class="delta"><label>Delta</label><div id="d1"></div></div>
   </div>
 </section>
 
@@ -155,12 +157,14 @@ function chips(parts, ctl) {
 
 function one() {
   const t = $("one").value;
-  if (!t) { $("g1").innerHTML = $("a1").innerHTML = ""; return; }
+  if (!t) { $("g1").innerHTML = $("a1").innerHTML = $("d1").innerHTML = ""; return; }
   const g = gematria(t), a = ascii(t);
   $("g1").innerHTML = `<div class="total">${g.total}</div>` +
     (g.parts.length ? chips(g.parts) : '<p class="note">No letters.</p>');
   $("a1").innerHTML = a.error ? `<div class="total err">ERROR</div><p class="err">${esc(a.error)}</p>`
     : `<div class="total">${a.total}</div>` + (a.parts.length ? chips(a.parts, true) : "");
+  $("d1").innerHTML = a.error ? `<div class="total">—</div><p class="note">ASCII has no value for this text.</p>`
+    : `<div class="total">${g.total - a.total}</div><p class="note mono">gematria − ASCII = ${g.total} − ${a.total}</p>`;
 }
 
 // ---- load -------------------------------------------------------------------------
