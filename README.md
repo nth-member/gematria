@@ -18,6 +18,12 @@ page, gematria is called H-Gematria:
   and the delta (gematria − ASCII). Each program's columns were checked byte for byte against the program,
   including quoting, tabs, `ß`, zero-width and non-breaking spaces, and the wording of the error.
 
+Before either value is computed, every character outside ASCII is ASCII-rized, so no name fails: curly quotes
+and dashes become their ASCII forms, accented letters lose their accents (Ë → E), ß becomes ss, Cyrillic and Greek
+are transliterated, and a character with no ASCII form (a zero-width space, a Chinese character) is dropped. The
+CSV keeps the name as given in `original_name`; every other column comes from the ASCII-rized text, and for any name
+it equals what the two programs give for that ASCII-rized text.
+
 The page needs only the programs' letter values and control-character names, in `docs/data/tables.json`.
 
 ## Rebuilding

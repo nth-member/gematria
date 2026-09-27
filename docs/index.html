@@ -36,6 +36,7 @@ textarea:disabled{opacity:.45}
 <section class="card">
   <h2>FULL NAME (GIVEN)</h2>
   <input id="one" type="text" autocomplete="off" spellcheck="false" style="width:100%" placeholder="Type a name">
+  <p class="note mono" id="as1" hidden style="margin:8px 0 0"></p>
   <div class="systems" style="margin-top:12px">
     <div><label>H-Gematria</label><div id="g1"></div></div>
     <div><label>ASCII</label><div id="a1"></div></div>
@@ -93,6 +94,43 @@ function ascii(text) {
     parts.push([shown, code]); total += code;
   }
   return {parts, total};
+}
+
+// ---- ASCII-rizing -----------------------------------------------------------------
+
+// Every character outside ASCII is replaced by its plain-ASCII form before either value is
+// computed, so no name fails: first by the table below, else by Unicode compatibility
+// decomposition with the accents removed (Ë → E, ﬁ → fi, Ａ → A); a character with no ASCII
+// form at all (a zero-width space, a Chinese character) is dropped.
+const ASCII_OF = (() => {
+  const m = {
+    "’": "'", "‘": "'", "‚": ",", "‛": "'", "′": "'", "“": '"', "”": '"', "„": '"', "″": '"', "«": '"', "»": '"',
+    "‐": "-", "‑": "-", "‒": "-", "–": "-", "—": "-", "―": "-", "−": "-", "…": "...", "·": ".", "•": "*",
+    "ß": "ss", "ẞ": "SS", "Æ": "AE", "æ": "ae", "Œ": "OE", "œ": "oe", "Ø": "O", "ø": "o", "Đ": "D", "đ": "d",
+    "Ð": "D", "ð": "d", "Þ": "TH", "þ": "th", "Ł": "L", "ł": "l", "ı": "i", "Ħ": "H", "ħ": "h", "Ŋ": "NG",
+    "ŋ": "ng", "ĸ": "k", "ſ": "s",
+  };
+  const cyr = {А:"A",Б:"B",В:"V",Г:"G",Д:"D",Е:"E",Ё:"YO",Ж:"ZH",З:"Z",И:"I",Й:"Y",К:"K",Л:"L",М:"M",Н:"N",
+    О:"O",П:"P",Р:"R",С:"S",Т:"T",У:"U",Ф:"F",Х:"KH",Ц:"TS",Ч:"CH",Ш:"SH",Щ:"SHCH",Ъ:"",Ы:"Y",Ь:"",Э:"E",
+    Ю:"YU",Я:"YA",Є:"YE",І:"I",Ї:"YI",Ґ:"G",Ђ:"DJ",Ј:"J",Љ:"LJ",Њ:"NJ",Ћ:"C",Џ:"DZ",Ў:"U"};
+  const grk = {Α:"A",Β:"V",Γ:"G",Δ:"D",Ε:"E",Ζ:"Z",Η:"I",Θ:"TH",Ι:"I",Κ:"K",Λ:"L",Μ:"M",Ν:"N",Ξ:"X",Ο:"O",
+    Π:"P",Ρ:"R",Σ:"S",Τ:"T",Υ:"Y",Φ:"F",Χ:"CH",Ψ:"PS",Ω:"O"};
+  for (const t of [cyr, grk]) for (const [k, v] of Object.entries(t)) { m[k] = v; m[k.toLowerCase()] = v.toLowerCase(); }
+  m["ς"] = "s";
+  return m;
+})();
+
+function asciirize(text) {
+  let out = "";
+  for (const ch of text) {
+    if (ch.codePointAt(0) < 128) { out += ch; continue; }
+    if (ch in ASCII_OF) { out += ASCII_OF[ch]; continue; }
+    for (const c of ch.normalize("NFKD")) {
+      if (c.codePointAt(0) < 128) out += c;
+      else if (c in ASCII_OF) out += ASCII_OF[c];
+    }
+  }
+  return out;
 }
 
 // Python's str.strip() whitespace, which differs from JavaScript's trim() at the edges
@@ -192,7 +230,7 @@ async function run() {
       let csv = "";
       for (const line of batch) {
         if (!kept(line)) continue;
-        const name = strip(line), g = gematria(name), a = ascii(line);
+        const plain = asciirize(line), name = strip(line), g = gematria(strip(plain)), a = ascii(plain);
         const gcols = [name, g.parts.map(p => p[0]).join(""), g.parts.map(([l, v]) => `${l}=${v}`).join(" + "), g.total];
         let said;
         if (a.error) {
@@ -247,8 +285,10 @@ function chips(parts, ctl) {
 
 function one() {
   const t = $("one").value;
-  if (!t) { $("g1").innerHTML = $("a1").innerHTML = $("d1").innerHTML = ""; return; }
-  const g = gematria(t), a = ascii(t);
+  if (!t) { $("g1").innerHTML = $("a1").innerHTML = $("d1").innerHTML = ""; $("as1").hidden = true; return; }
+  const plain = asciirize(t), g = gematria(plain), a = ascii(plain);
+  $("as1").hidden = plain === t;
+  $("as1").textContent = plain === t ? "" : `ASCII-rized as: ${plain}`;
   $("g1").innerHTML = `<div class="total">${g.total}</div>` +
     (g.parts.length ? chips(g.parts) : '<p class="note">No letters.</p>');
   $("a1").innerHTML = a.error ? `<div class="total err">ERROR</div><p class="err">${esc(a.error)}</p>`
