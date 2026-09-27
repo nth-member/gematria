@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gematria and ASCII</title>
+<meta name="description" content="The two name-value programs, gematria_names.py and ascii_name_sum.py, in the browser: any text, and any list.">
+<link rel="stylesheet" href="site.css">
+<style>
+.systems{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:640px){.systems{grid-template-columns:1fr}}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.chip{background:var(--chip);border-radius:6px;padding:3px 6px;text-align:center;min-width:30px;
+  font-family:ui-monospace,monospace;line-height:1.25}
+.chip b{display:block;font-size:13px;font-weight:600}
+.chip i{display:block;font-style:normal;font-size:10.5px;color:var(--ink-2)}
+.chip.ctl b{font-size:10px}
+.total{font:600 26px/1.1 ui-monospace,monospace;letter-spacing:-.02em;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="top"><a href="./" aria-current="page">Calculator</a>
+  <a href="../member/">The nth member</a><a href="../revott/">REVOTT atop GDELT</a><a href="../gdelt/">GDELT day sources</a></nav>
+
+<h1>Gematria and ASCII</h1>
+<p class="sub">The two name-value programs in the browser. <span class="mono">gematria_names.py</span> sums the
+anglicized Hebrew gematria of the letters (A=1 … I=9, J=10 … R=90, S=100 … Z=800), ignoring case, spaces and
+punctuation. <span class="mono">ascii_name_sum.py</span> sums the 7-bit ASCII code of every character, spaces,
+punctuation and case included.</p>
+
+
+<section class="card">
+  <h2>Any text</h2>
+  <p class="note">Both programs at once, as you type.</p>
+  <input id="one" type="text" autocomplete="off" spellcheck="false" style="width:100%" placeholder="Type a name">
+  <div class="systems" style="margin-top:12px">
+    <div><label>Gematria · gematria_names.py</label><div id="g1"></div></div>
+    <div><label>ASCII · ascii_name_sum.py</label><div id="a1"></div></div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Run the programs on a list</h2>
+  <p class="note">One name per line; blank lines and lines beginning with <span class="mono">#</span> are skipped,
+  exactly as the programs read their names file. Each run prints what the
+  program prints and saves the CSV it writes, with the same columns and file name.</p>
+  <textarea id="list" rows="9" spellcheck="false" autocomplete="off" placeholder="One name per line"></textarea>
+  <div class="bar" style="margin-top:10px">
+    <button id="rung">Run gematria_names.py</button>
+    <button id="runa">Run ascii_name_sum.py</button>
+    <button id="reset">Clear</button>
+  </div>
+  <pre class="term" id="term" hidden></pre>
+</section>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let VALUES = {}, CONTROL = {};
+
+// ---- the two programs, line for line ----------------------------------------
+
+// gematria_names.gematria_breakdown: upper-case, keep the letters in VALUES.
+function gematria(text) {
+  const parts = []; let total = 0;
+  for (const ch of text.toUpperCase()) {
+    if (Object.prototype.hasOwnProperty.call(VALUES, ch)) { parts.push([ch, VALUES[ch]]); total += VALUES[ch]; }
+  }
+  return {parts, total};
+}
+
+// Python's repr() of one character, as it appears in the ValueError message.
+function pyRepr(ch) {
+  const c = ch.codePointAt(0);
+  if (/[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Zs}]/u.test(ch)) {
+    const h = c.toString(16);
+    return "'" + (c <= 0xff ? "\\x" + h.padStart(2, "0") : c <= 0xffff ? "\\u" + h.padStart(4, "0") : "\\U" + h.padStart(8, "0")) + "'";
+  }
+  return "'" + ch + "'";
+}
+
+// ascii_name_sum.ascii_breakdown: every character 0..127, named if a control or a space.
+function ascii(text) {
+  const parts = []; let total = 0;
+  for (const ch of text) {
+    const code = ch.codePointAt(0);
+    if (code > 127) return {error: `Non-ASCII character encountered: ${pyRepr(ch)}`};
+    const shown = CONTROL[code] !== undefined ? CONTROL[code] : ch === " " ? "Space" : ch;
+    parts.push([shown, code]); total += code;
+  }
+  return {parts, total};
+}
+
+// The programs open the file in text mode, so \r\n and \r arrive as \n.
+const lines = text => text.split(/\r\n|\r|\n/);
+const readGematria = text => lines(text).map(l => l.trim()).filter(l => l && !l.startsWith("#"));
+const readAscii = text => lines(text).filter(l => l.trim() && !l.trimStart().startsWith("#"));
+
+// csv.writer's default dialect: minimal quoting, \r\n line ends.
+const csvField = v => { v = String(v); return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+const csvRow = r => r.map(csvField).join(",") + "\r\n";
+
+function stamp() {
+  const d = new Date(), p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+function save(name, body) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([body], {type: "text/csv;charset=utf-8"}));
+  a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+}
+
+function runGematria() {
+  const names = readGematria($("list").value);
+  if (!names.length) return term(`No names found in: the list above`);
+  const file = `gematria_results_${stamp()}.csv`;
+  let csv = csvRow(["original_name", "normalized_letters", "breakdown", "total"]), out = "";
+  for (const n of names) {
+    const {parts, total} = gematria(n);
+    csv += csvRow([n, parts.map(p => p[0]).join(""), parts.map(([l, v]) => `${l}=${v}`).join(" + "), total]);
+    out += `${n} -> ${total}\n`;
+  }
+  save(file, csv);
+  term(out + `\nProcessed ${names.length} name(s).\nOutput written to: ${file}`);
+}
+
+function runAscii() {
+  const names = readAscii($("list").value);
+  if (!names.length) return term(`No names found in: the list above`);
+  const file = `ascii_results_${stamp()}.csv`;
+  let csv = csvRow(["original_text", "ascii_characters", "breakdown", "total"]), out = "";
+  for (const n of names) {
+    const r = ascii(n);
+    if (r.error) { csv += csvRow([n, "", `ERROR: ${r.error}`, ""]); out += `${n} -> ERROR: ${r.error}\n`; continue; }
+    csv += csvRow([n, r.parts.map(([s]) => s === "Space" ? " " : s).join(""), r.parts.map(([s, v]) => `${s}=${v}`).join(" + "), r.total]);
+    out += `${n} -> ${r.total}\n`;
+  }
+  save(file, csv);
+  term(out + `\nProcessed ${names.length} line(s).\nOutput written to: ${file}`);
+}
+
+function term(s) { const t = $("term"); t.hidden = false; t.textContent = s; }
+
+// ---- any text -----------------------------------------------------------------
+
+function chips(parts, ctl) {
+  return '<div class="chips">' + parts.map(([s, v]) =>
+    `<span class="chip${ctl && s.length > 1 ? " ctl" : ""}"><b>${esc(s === "Space" ? "␣" : s)}</b><i>${v}</i></span>`).join("") + "</div>";
+}
+
+function one() {
+  const t = $("one").value;
+  if (!t) { $("g1").innerHTML = $("a1").innerHTML = ""; return; }
+  const g = gematria(t), a = ascii(t);
+  $("g1").innerHTML = `<div class="total">${g.total}</div>` +
+    (g.parts.length ? chips(g.parts) : '<p class="note">No letters.</p>');
+  $("a1").innerHTML = a.error ? `<div class="total err">ERROR</div><p class="err">${esc(a.error)}</p>`
+    : `<div class="total">${a.total}</div>` + (a.parts.length ? chips(a.parts, true) : "");
+}
+
+// ---- load -------------------------------------------------------------------------
+
+async function main() {
+  const tables = await fetch("data/tables.json").then(r => r.json());
+  VALUES = tables.values; CONTROL = tables.control_names;
+
+  $("reset").onclick = () => { $("list").value = ""; $("term").hidden = true; $("list").focus(); };
+  $("rung").onclick = runGematria; $("runa").onclick = runAscii;
+
+  $("one").addEventListener("input", one);
+
+  one();
+}
+main().catch(e => { $("g1").innerHTML = `<p class="err">Could not load: ${esc(e.message)}</p>`; });
+</script>
+</body>
+</html>
