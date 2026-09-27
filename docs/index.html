@@ -12,6 +12,11 @@ h1{margin-bottom:16px}
 .systems{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media (max-width:640px){.systems{grid-template-columns:1fr}}
 .systems .delta{grid-column:1/-1}
+.pick{display:inline-block;position:relative;overflow:hidden;margin:0;padding:7px 11px;border:1px solid var(--axis);border-radius:8px;cursor:pointer;
+  font-size:14px;letter-spacing:0;text-transform:none;color:var(--ink);background:var(--plane)}
+.pick input{position:absolute;width:1px;height:1px;opacity:0}
+.bar #chosen{margin:0;align-self:center}
+textarea:disabled{opacity:.45}
 .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
 .chip{background:var(--chip);border-radius:6px;padding:3px 6px;text-align:center;min-width:30px;
   font-family:ui-monospace,monospace;line-height:1.25}
@@ -44,6 +49,8 @@ h1{margin-bottom:16px}
   <div class="bar" style="margin-top:10px">
     <button id="run">Run</button>
     <button id="reset">Clear</button>
+    <label class="pick"><input type="file" id="file" accept=".txt,.csv,.tsv,text/plain,text/csv">or a file…</label>
+    <span class="note mono" id="chosen"></span><button id="unchoose" hidden aria-label="Remove the file">×</button>
   </div>
   <pre class="term" id="term" hidden></pre>
 </section>
@@ -88,9 +95,12 @@ function ascii(text) {
   return {parts, total};
 }
 
-// The programs open the file in text mode, so \r\n and \r arrive as \n.
-const lines = text => text.split(/\r\n|\r|\n/);
-const readAscii = text => lines(text).filter(l => l.trim() && !l.trimStart().startsWith("#"));
+// Python's str.strip() whitespace, which differs from JavaScript's trim() at the edges
+// (\x1c-\x1f and \x85 are whitespace to Python; ﻿ is not).
+const PYWS = "\t\n\x0b\x0c\r\x1c\x1d\x1e\x1f \x85\xa0  -     　";
+const LEAD = new RegExp(`^[${PYWS}]+`), TRAIL = new RegExp(`[${PYWS}]+$`);
+const strip = s => s.replace(LEAD, "").replace(TRAIL, "");
+const kept = l => strip(l) !== "" && !l.replace(LEAD, "").startsWith("#");
 
 // csv.writer's default dialect: minimal quoting, \r\n line ends.
 const csvField = v => { v = String(v); return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
@@ -101,39 +111,132 @@ function stamp() {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
-function save(name, body) {
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([body], {type: "text/csv;charset=utf-8"}));
-  a.download = name; document.body.appendChild(a); a.click();
-  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+// ---- lines in, rows out, at any size -----------------------------------------------
+
+// The lines of a text or a file, a batch at a time. The programs open their file in
+// text mode as UTF-8, so \r\n, \r and \n all end a line, a byte-order mark is kept as
+// a character, and bytes that are not UTF-8 are an error. A file is never read whole.
+async function* batches(src, progress) {
+  if (typeof src === "string") { yield src.split(/\r\n|\r|\n/); return; }
+  let read = 0;
+  const counted = src.stream().pipeThrough(new TransformStream({
+    transform(chunk, c) { read += chunk.byteLength; progress(read / src.size); c.enqueue(chunk); }
+  }));
+  const reader = counted.pipeThrough(new TextDecoderStream("utf-8", {fatal: true, ignoreBOM: true})).getReader();
+  let rest = "";
+  for (;;) {
+    const {value, done} = await reader.read();
+    if (done) break;
+    let buf = rest + value;
+    const cr = buf.endsWith("\r");                // may be the first half of a \r\n
+    if (cr) buf = buf.slice(0, -1);
+    const parts = buf.split(/\r\n|\r|\n/);
+    rest = parts.pop() + (cr ? "\r" : "");
+    yield parts;
+  }
+  yield rest.split(/\r\n|\r|\n/);
 }
+
+// Where the CSV goes. For a large file, where the browser allows it (Chrome, Edge),
+// straight to a file on disk as it is made; otherwise into the browser's own storage,
+// folded into one Blob every 16 MB so the page never holds the text itself, then saved.
+const STREAM_ABOVE = 50e6;
+async function sink(name, big) {
+  if (big && window.showSaveFilePicker) {
+    let handle;
+    try {
+      handle = await window.showSaveFilePicker({suggestedName: name, types: [{description: "CSV", accept: {"text/csv": [".csv"]}}]});
+    } catch (e) {
+      if (e.name === "AbortError") return null;
+    }
+    if (handle) {
+      const w = await handle.createWritable();
+      return {name: handle.name, write: t => w.write(t), close: () => w.close(), abort: () => w.close()};
+    }
+  }
+  let blob = new Blob([]), parts = [], size = 0;
+  return {
+    name,
+    write(t) { parts.push(t); size += t.length; if (size > 16e6) { blob = new Blob([blob, ...parts]); parts = []; size = 0; } },
+    close() {
+      blob = new Blob([blob, ...parts], {type: "text/csv;charset=utf-8"}); parts = [];
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 60000);
+    },
+    abort() { parts = []; blob = null; },
+  };
+}
+
+const HEADER = ["original_name", "normalized_letters", "h-gematria_breakdown", "h-gematria_total",
+                "ascii_characters", "ascii_breakdown", "ascii_total", "delta"];
+const SHOWN = 200;
+let running = null;
 
 // One row per name: gematria_names.py's columns, then ascii_name_sum.py's, then the delta.
 // The ASCII columns are taken from the line as written, as ascii_name_sum.py reads it.
-function run() {
-  const lines = readAscii($("list").value);
-  if (!lines.length) return term(`No names found in: the list above`);
-  const file = `h-gematria_ascii_results_${stamp()}.csv`;
-  let csv = csvRow(["original_name", "normalized_letters", "gematria_breakdown", "gematria_total",
-                    "ascii_characters", "ascii_breakdown", "ascii_total", "delta"]), out = "";
-  for (const line of lines) {
-    const name = line.trim(), g = gematria(name), a = ascii(line);
-    const gcols = [name, g.parts.map(p => p[0]).join(""), g.parts.map(([l, v]) => `${l}=${v}`).join(" + "), g.total];
-    if (a.error) {
-      csv += csvRow([...gcols, "", `ERROR: ${a.error}`, "", ""]);
-      out += `${name} -> H-Gematria ${g.total} · ASCII ERROR: ${a.error}\n`;
-      continue;
+async function run() {
+  if (running) { running.stop = true; return; }
+  const file = $("file").files[0] || null;
+  const src = file || $("list").value;
+  const out = await sink(`h-gematria_ascii_results_${stamp()}.csv`, !!file && file.size > STREAM_ABOVE);
+  if (!out) return;
+  running = {stop: false};
+  $("run").textContent = "Stop";
+  const shown = []; let n = 0, pct = "", ok = false;
+  const status = () => term(shown.join("") + (n > SHOWN ? `… ${(n - SHOWN).toLocaleString()} more\n` : "") +
+                           `\n${running && !ok ? "Running" : "Processed"} ${n.toLocaleString()} name(s)${pct}`);
+  try {
+    await out.write(csvRow(HEADER));
+    for await (const batch of batches(src, f => { pct = ` · ${Math.floor(f * 100)}% of ${file.name} read`; })) {
+      let csv = "";
+      for (const line of batch) {
+        if (!kept(line)) continue;
+        const name = strip(line), g = gematria(name), a = ascii(line);
+        const gcols = [name, g.parts.map(p => p[0]).join(""), g.parts.map(([l, v]) => `${l}=${v}`).join(" + "), g.total];
+        let said;
+        if (a.error) {
+          csv += csvRow([...gcols, "", `ERROR: ${a.error}`, "", ""]);
+          said = `${name} -> H-Gematria ${g.total} · ASCII ERROR: ${a.error}\n`;
+        } else {
+          const d = g.total - a.total;
+          csv += csvRow([...gcols, a.parts.map(([s]) => s === "Space" ? " " : s).join(""),
+                         a.parts.map(([s, v]) => `${s}=${v}`).join(" + "), a.total, d]);
+          said = `${name} -> H-Gematria ${g.total} · ASCII ${a.total} · Delta ${d}\n`;
+        }
+        if (++n <= SHOWN) shown.push(said);
+      }
+      await out.write(csv);
+      status();
+      if (running.stop) break;
+      await new Promise(r => setTimeout(r, 0));
     }
-    const d = g.total - a.total;
-    csv += csvRow([...gcols, a.parts.map(([s]) => s === "Space" ? " " : s).join(""),
-                   a.parts.map(([s, v]) => `${s}=${v}`).join(" + "), a.total, d]);
-    out += `${name} -> H-Gematria ${g.total} · ASCII ${a.total} · Delta ${d}\n`;
+    if (!n) { out.abort(); return term(`No names found in: ${file ? file.name : "the list above"}`); }
+    if (running.stop) {
+      await out.close();
+      return term(shown.join("") + `\nStopped after ${n.toLocaleString()} name(s).\nOutput written to: ${out.name} (partial)`);
+    }
+    await out.close(); ok = true;
+    term(shown.join("") + (n > SHOWN ? `… ${(n - SHOWN).toLocaleString()} more\n` : "") +
+         `\nProcessed ${n.toLocaleString()} name(s).\nOutput written to: ${out.name}`);
+  } catch (e) {
+    out.abort();
+    term(e instanceof TypeError && /decod|encod|malformed|utf-?8/i.test(e.message)
+      ? `${file ? file.name : "The list"} is not UTF-8 text, which the programs require.`
+      : `Could not finish: ${e.message}`);
+  } finally {
+    running = null; $("run").textContent = "Run";
   }
-  save(file, csv);
-  term(out + `\nProcessed ${lines.length} name(s).\nOutput written to: ${file}`);
 }
 
 function term(s) { const t = $("term"); t.hidden = false; t.textContent = s; }
+
+function chosen() {
+  const f = $("file").files[0];
+  $("list").disabled = !!f;
+  $("chosen").textContent = f ? `${f.name} · ${(f.size / 1e6).toLocaleString(undefined, {maximumFractionDigits: 1})} MB` : "";
+  $("unchoose").hidden = !f;
+}
 
 // ---- any text -----------------------------------------------------------------
 
@@ -160,7 +263,12 @@ async function main() {
   const tables = await fetch("data/tables.json").then(r => r.json());
   VALUES = tables.values; CONTROL = tables.control_names;
 
-  $("reset").onclick = () => { $("list").value = ""; $("term").hidden = true; $("list").focus(); };
+  $("reset").onclick = () => {
+    if (running) return;
+    $("list").value = ""; $("file").value = ""; chosen(); $("term").hidden = true; $("list").focus();
+  };
+  $("file").addEventListener("change", chosen);
+  $("unchoose").onclick = () => { $("file").value = ""; chosen(); };
   $("run").onclick = run;
 
   $("one").addEventListener("input", one);
