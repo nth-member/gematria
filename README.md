@@ -1,4 +1,4 @@
-# Gematria and ASCII
+# H-Gematria/ASCII
 
 **The two name-value programs in the browser.** Served at https://nth-member.github.io/gematria/.
 
@@ -9,11 +9,12 @@
 
 ## The site
 
-`docs/` is static: no build step on the server, no dependencies. `index.html` has two parts:
+`docs/` is static: no build step on the server, no dependencies. `index.html` has two parts; on the
+page, gematria is called H-Gematria:
 
 - **FULL NAME (GIVEN):** both values as you type, letter by letter, and their delta (gematria − ASCII).
 - **RUN FULL NAMES (GIVEN) ON A LIST:** reads the lines the way the programs read their names file, and
-  **Run** saves one CSV with a row per name: `gematria_names.py`'s columns, `ascii_name_sum.py`'s columns,
+  **Run** saves one CSV, `h-gematria_ascii_results_<stamp>.csv`, with a row per name: `gematria_names.py`'s columns, `ascii_name_sum.py`'s columns,
   and the delta (gematria − ASCII). Each program's columns were checked byte for byte against the program,
   including quoting, tabs, `ß`, zero-width and non-breaking spaces, and the wording of the error.
 

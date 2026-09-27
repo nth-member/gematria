@@ -3,10 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Gematria and ASCII</title>
-<meta name="description" content="The two name-value programs, gematria_names.py and ascii_name_sum.py, in the browser: any text, and any list.">
+<title>H-Gematria/ASCII</title>
+<meta name="description" content="H-Gematria/ASCII: a full name, or a list of full names.">
 <link rel="stylesheet" href="site.css">
 <style>
+h1{margin-bottom:16px}
+.card h2{margin-bottom:10px}
 .systems{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media (max-width:640px){.systems{grid-template-columns:1fr}}
 .systems .delta{grid-column:1/-1}
@@ -24,19 +26,13 @@
 <nav class="top"><a href="./" aria-current="page">Calculator</a>
   <a href="../member/">The nth member</a><a href="../revott/">REVOTT atop GDELT</a><a href="../gdelt/">GDELT day sources</a></nav>
 
-<h1>Gematria and ASCII</h1>
-<p class="sub">The two name-value programs in the browser. <span class="mono">gematria_names.py</span> sums the
-anglicized Hebrew gematria of the letters (A=1 … I=9, J=10 … R=90, S=100 … Z=800), ignoring case, spaces and
-punctuation. <span class="mono">ascii_name_sum.py</span> sums the 7-bit ASCII code of every character, spaces,
-punctuation and case included.</p>
-
+<h1>H-Gematria/ASCII</h1>
 
 <section class="card">
   <h2>FULL NAME (GIVEN)</h2>
-  <p class="note">Both programs at once, as you type.</p>
   <input id="one" type="text" autocomplete="off" spellcheck="false" style="width:100%" placeholder="Type a name">
   <div class="systems" style="margin-top:12px">
-    <div><label>Gematria</label><div id="g1"></div></div>
+    <div><label>H-Gematria</label><div id="g1"></div></div>
     <div><label>ASCII</label><div id="a1"></div></div>
     <div class="delta"><label>Delta</label><div id="d1"></div></div>
   </div>
@@ -44,9 +40,6 @@ punctuation and case included.</p>
 
 <section class="card">
   <h2>RUN FULL NAMES (GIVEN) ON A LIST</h2>
-  <p class="note">One name per line; blank lines and lines beginning with <span class="mono">#</span> are skipped,
-  exactly as the programs read their names file. Run gives each name both programs' results and their delta,
-  and saves them as one CSV.</p>
   <textarea id="list" rows="9" spellcheck="false" autocomplete="off" placeholder="One name per line"></textarea>
   <div class="bar" style="margin-top:10px">
     <button id="run">Run</button>
@@ -120,7 +113,7 @@ function save(name, body) {
 function run() {
   const lines = readAscii($("list").value);
   if (!lines.length) return term(`No names found in: the list above`);
-  const file = `gematria_ascii_results_${stamp()}.csv`;
+  const file = `h-gematria_ascii_results_${stamp()}.csv`;
   let csv = csvRow(["original_name", "normalized_letters", "gematria_breakdown", "gematria_total",
                     "ascii_characters", "ascii_breakdown", "ascii_total", "delta"]), out = "";
   for (const line of lines) {
@@ -128,13 +121,13 @@ function run() {
     const gcols = [name, g.parts.map(p => p[0]).join(""), g.parts.map(([l, v]) => `${l}=${v}`).join(" + "), g.total];
     if (a.error) {
       csv += csvRow([...gcols, "", `ERROR: ${a.error}`, "", ""]);
-      out += `${name} -> gematria ${g.total} · ascii ERROR: ${a.error}\n`;
+      out += `${name} -> H-Gematria ${g.total} · ASCII ERROR: ${a.error}\n`;
       continue;
     }
     const d = g.total - a.total;
     csv += csvRow([...gcols, a.parts.map(([s]) => s === "Space" ? " " : s).join(""),
                    a.parts.map(([s, v]) => `${s}=${v}`).join(" + "), a.total, d]);
-    out += `${name} -> gematria ${g.total} · ascii ${a.total} · delta ${d}\n`;
+    out += `${name} -> H-Gematria ${g.total} · ASCII ${a.total} · Delta ${d}\n`;
   }
   save(file, csv);
   term(out + `\nProcessed ${lines.length} name(s).\nOutput written to: ${file}`);
@@ -158,7 +151,7 @@ function one() {
   $("a1").innerHTML = a.error ? `<div class="total err">ERROR</div><p class="err">${esc(a.error)}</p>`
     : `<div class="total">${a.total}</div>` + (a.parts.length ? chips(a.parts, true) : "");
   $("d1").innerHTML = a.error ? `<div class="total">—</div><p class="note">ASCII has no value for this text.</p>`
-    : `<div class="total">${g.total - a.total}</div><p class="note mono">gematria − ASCII = ${g.total} − ${a.total}</p>`;
+    : `<div class="total">${g.total - a.total}</div><p class="note mono">H-Gematria − ASCII = ${g.total} − ${a.total}</p>`;
 }
 
 // ---- load -------------------------------------------------------------------------
